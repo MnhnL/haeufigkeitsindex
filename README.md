@@ -9,7 +9,7 @@ Calculates the rarity index as defined in https://mdata.mnhn.lu/include/mai/NuL1
 2. Install dependencies
 3. Check out this repository using git
 4. Change into git repository
-5. Run `./haeufindex.sh observations.csv output.csv 1000` for an analysis on 1km squares
+5. Run `sh haeufindex.sh observations.csv output.csv 1000` for an analysis on 1km squares
 6. Read the output in the file `output.csv`
 
 Note: If you want to do additional analysis, you can run `spatialite /tmp/loaded.sqlite` after running the analysis. This database contains the following interesting tables:
