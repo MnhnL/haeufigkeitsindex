@@ -22,9 +22,6 @@ select '-- Read and reproject positions';
 update obs set geom = Transform(MakePoint(cast(Long as real), cast(Lat as real), 4326), 2169);
 --update obs set geom = Transform(PointFromText(location, 4326), 2169);
 
---select '-- Create spatial index for observations';
---select CreateSpatialIndex('obs', 'geom');
-
 -- Create a table to store the grid as multipolygon (the only way)
 select '-- Create grid';
 create table cells_multi (id integer primary key autoincrement);
@@ -37,50 +34,82 @@ select
     transform(
       envelope(
         makeline(
-          makepoint(5.67405195478, 49.4426671413, 4326), -- Luxembourg bounding box
-          makepoint(6.24275109216, 50.128051662, 4326)
+          makepoint(5.674, 49.442, 4326), -- Luxembourg bounding box
+          makepoint(6.56, 50.225, 4326)
         )
       ),
       2169
     ),
-    CELL_SIZE
+    {{CELL_SIZE}}
   );
 
 -- extract multipolygon into singe polygons
 .elemgeo cells_multi geom cells pk old_id
 
-select CreateMbrCache('cells', 'geom'); 
+-- this also creates table roi
+.loadshp {{ROI}} roi utf-8
+
+-- only keep cells intersecting with ROI
+create table cells_in_roi (pk integer primary key);
+select AddGeometryColumn('cells_in_roi', 'geom', 2169, 'POLYGON', 'XY');
+
+insert into cells_in_roi
+select c.pk, c.geom as geom from cells as c, roi
+ where intersects(c.geom, roi.geometry);
+
+select CreateMbrCache('cells_in_roi', 'geom');
 
 -- Create normalized observation table (obs has cellid if it's contained in said cell)
 select '-- Creat obs_norm';
-create table obs_norm (obs_key text, taxon text, determiner text, cellid integer);
+create table obs_norm (obs_key text,
+                       taxon_kingdom text, taxon_phylum text, taxon_class text,
+                       taxon_order text, taxon_family text, taxon_genus text,
+                       taxon text,
+                       determiner text, cellid integer);
 
 -- Naively localize observation in cell
 -- insert into obs_norm
 -- select o.Observation_Key as obs_key, o.preferred as taxon, Determiner as determiner, c.pk as cellid
 -- from obs as o
--- inner join cells as c
+-- inner join cells_in_roi as c
 --     on within(o.geom, c.geom);
 
 -- Localize observation in cell using in-memory MBR/BoundingBox cache
 insert into obs_norm
-select o.Observation_Key as obs_key, o.preferred as taxon, Determiner as determiner, c.pk as cellid
+select o.Observation_Key as obs_key,
+       o.Taxon_Kingdom as taxon_kingdom,o.Taxon_Phylum as taxon_phylum,
+       o.Taxon_Class as taxon_class, o.Taxon_Order as taxon_order,
+       o.Taxon_Family as taxon_family, o.Taxon_Genus as taxon_genus,
+       o.preferred as taxon, Determiner as determiner, c.pk as cellid
   from obs as o
-       inner join cells as c
+       inner join cells_in_roi as c
            on within(o.geom, c.geom)
            and c.rowid in (
-             select rowid from cache_cells_geom
+             select rowid from cache_cells_in_roi_geom
               where mbr = FilterMbrContains(x(o.geom), y(o.geom), x(o.geom), y(o.geom))
-           );
+           )
+ where taxon <> ''; -- don't take into account observations w/o taxon
+
+
+-- Species-Group count table: Allows different reference counts for different taxa
+create table species_group_count (name text, count integer);
+
+insert into species_group_count
+select taxon_{{SPECIES_GROUP}}, count(*)
+  from obs_norm
+ group by taxon_{{SPECIES_GROUP}};
 
 -- Calculate AAI = Art/Artklassenintensität
 select '-- Calculate AAI';
-create table aai (intensity real, taxon text);
+create table aai (intensity real, taxon text, sample_count integer);
 
 insert into aai
-select cast(count(obs_key) as real) / sum(count(obs_key)) over () as aai,
-       taxon
+select (cast(count(cellid) as real) / sgc.count)*100 as aai,
+       taxon,
+       count(*) as sample_count
   from obs_norm
+       inner join species_group_count as sgc
+                    on obs_norm.taxon_{{SPECIES_GROUP}} = sgc.name
  group by taxon
  order by aai;
 
@@ -89,28 +118,32 @@ select '-- Calculate AGI';
 create table agi (intensity real, taxon text);
 
 insert into agi
-select cast(count(cellid) as real) / sum(cellid) over () as agi,
+select (cast(count(cellid) as real) / sgc.count)*100 as agi,
        taxon
-from (
-   select count(cellid), taxon, cellid
-   from obs_norm
-   group by taxon, cellid
-)
-group by taxon
-order by agi;
+  from (
+    select count(cellid), cellid, taxon_kingdom, taxon_phylum, taxon_class, taxon_order, taxon_family, taxon
+      from obs_norm
+     group by taxon, cellid
+  ) as obs
+       inner join species_group_count as sgc
+           on obs.taxon_{{SPECIES_GROUP}} = sgc.name
+ group by taxon
+ order by agi;
 
 -- Calculate AMI = Art/Melder-Intensität
 select '-- Calculate AMI';
 create table ami (intensity real, taxon text);
 
 insert into ami
-select cast(count(determiner) as real) / sum(count(determiner)) over () as ami,
+select (cast(count(determiner) as real) / sgc.count)*100 as ami,
        taxon
   from (
-    select count(determiner), determiner, taxon
+    select count(determiner), determiner, taxon_kingdom, taxon_phylum, taxon_class, taxon_order, taxon_family, taxon
       from obs_norm
      group by taxon, determiner
-  )
+  ) as obs
+       inner join species_group_count as sgc
+           on obs.taxon_{{SPECIES_GROUP}} = sgc.name
  group by taxon
  order by ami;
 
@@ -128,20 +161,27 @@ values (0.0, 0.5, 'extremely rare'),
 
 -- Calculate mAI
 select '-- Calculate mai';
-create table mai (taxon text, mai real);
+create table mai (taxon text, aai real, agi real, ami real, mai real, sample_count integer);
 
 insert into mai
 select aai.taxon as taxon,
-       (aai.intensity + agi.intensity + ami.intensity)*100 as mai
+       aai.intensity as aai, agi.intensity as agi, ami.intensity as ami,
+       aai.intensity + agi.intensity + ami.intensity as mai,
+       aai.sample_count
   from aai
        inner join agi on aai.taxon = agi.taxon
        inner join ami on aai.taxon = ami.taxon
+ where aai.sample_count >= 1000
  order by mai;
 
 select '-- Output';
 .header on
 .mode csv
-.output OUTPUT_FILE
+.output {{OUTPUT_FILE}}
   -- select * from mai;
-  select mai.taxon, mai.mai, mi.interpretation from mai inner join mai_interpretation as mi on mai.mai >= mi.mai_low and mai.mai < mi.mai_high;
+  select mai.taxon, mai.aai, mai.agi, mai.ami, mai.mai, mi.interpretation, mai.sample_count
+  from mai
+  inner join mai_interpretation as mi
+  on mai.mai >= mi.mai_low
+  and mai.mai < mi.mai_high;
 .quit
