@@ -5,7 +5,7 @@ Calculates the rarity index as defined in https://mdata.mnhn.lu/include/mai/NuL1
 `apt install sqlite3 spatialite-bin`
 
 ## Running
-1. Export a csv file from https://mdata.mnhn.lu/ that includes all obeservations of a reference taxon (eg. aves) in a reference time (eg. a year). Alternatively it reads any csv file that has a 'Long', 'Lat', 'Observation_Key' (not used), 'Taxon_Kingdom', 'Taxon_Phylum', 'Taxon_Class', 'Taxon_Order', 'Taxon_Family', 'Taxon_Genus' and 'preferred' (the taxon name) colum.
+1. Export a csv file from https://mdata.mnhn.lu/ that includes all obeservations of a reference taxon in a reference time. Alternatively it reads any csv file that has a 'Long', 'Lat', 'Taxon_Kingdom', 'Taxon_Phylum', 'Taxon_Class', 'Taxon_Order', 'Taxon_Family', 'Taxon_Genus' and 'preferred' (the taxon name) colum.
 2. Install dependencies
 3. Check out this repository using git
 4. Change into git repository
