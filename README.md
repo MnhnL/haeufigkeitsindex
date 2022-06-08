@@ -9,8 +9,8 @@ Calculates the rarity index as defined in https://mdata.mnhn.lu/include/mai/NuL1
 2. Install dependencies
 3. Check out this repository using git
 4. Change into git repository
-5. Run `sh haeufindex.sh observations.csv output.csv 1000` for an analysis on 1km squares
-6. Read the output in the file `output.csv`
+5. Run `sh haeufindex.sh observations.csv output.csv 1000 luxembourg family` for an analysis on 1km squares bounded by the luxembourg.shp,shx shapefile relative to the taxon level `family`.
+7. Read the output in the file `output.csv`
 
 Note: If you want to do additional analysis, you can run `spatialite /tmp/loaded.sqlite` after running the analysis. This database contains the following interesting tables:
 * obs_norm: observations with reference to cell they are contained in
