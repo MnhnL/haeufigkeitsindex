@@ -61,23 +61,22 @@ select CreateMbrCache('cells_in_roi', 'geom');
 
 -- Create normalized observation table (obs has cellid if it's contained in said cell)
 select '-- Creat obs_norm';
-create table obs_norm (obs_key text,
-                       taxon_kingdom text, taxon_phylum text, taxon_class text,
+create table obs_norm (taxon_kingdom text, taxon_phylum text, taxon_class text,
                        taxon_order text, taxon_family text, taxon_genus text,
                        taxon text,
                        determiner text, cellid integer);
 
--- Naively localize observation in cell
+-- Naively localize observation in cell. This is waaayy slower then below version 
 -- insert into obs_norm
 -- select o.Observation_Key as obs_key, o.preferred as taxon, Determiner as determiner, c.pk as cellid
 -- from obs as o
 -- inner join cells_in_roi as c
---     on within(o.geom, c.geom);
+--     on within(o.geom, c.geom)
+-- where taxon <> '';
 
 -- Localize observation in cell using in-memory MBR/BoundingBox cache
 insert into obs_norm
-select o.Observation_Key as obs_key,
-       o.Taxon_Kingdom as taxon_kingdom,o.Taxon_Phylum as taxon_phylum,
+select o.Taxon_Kingdom as taxon_kingdom,o.Taxon_Phylum as taxon_phylum,
        o.Taxon_Class as taxon_class, o.Taxon_Order as taxon_order,
        o.Taxon_Family as taxon_family, o.Taxon_Genus as taxon_genus,
        o.preferred as taxon, Determiner as determiner, c.pk as cellid
@@ -92,6 +91,7 @@ select o.Observation_Key as obs_key,
 
 
 -- Species-Group count table: Allows different reference counts for different taxa
+select '-- Calculate Species-Group count table';
 create table species_group_count (name text, count integer);
 
 insert into species_group_count
@@ -171,7 +171,6 @@ select aai.taxon as taxon,
   from aai
        inner join agi on aai.taxon = agi.taxon
        inner join ami on aai.taxon = ami.taxon
- where aai.sample_count >= 1000
  order by mai;
 
 select '-- Output';

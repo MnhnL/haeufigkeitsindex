@@ -9,7 +9,8 @@ Calculates the rarity index as defined in https://mdata.mnhn.lu/include/mai/NuL1
 2. Install dependencies
 3. Check out this repository using git
 4. Change into git repository
-5. Run `sh haeufindex.sh observations.csv output.csv 1000 luxembourg family` for an analysis on 1km squares bounded by the luxembourg.shp,shx shapefile relative to the taxon level `family`.
+5. Download a bounding shape file and extract here (eg. limadmin-shp.zip from https://data.public.lu/en/datasets/limites-administratives-du-grand-duche-de-luxembourg/). Also adjust the bounding box in `haeufindex.sql` if the analysis is to be run on another region than the country Luxembourg.
+6. Run `sh haeufindex.sh observations.csv output.csv 1000 LIMADM_PAYS family` for an analysis on 1km squares bounded by the LIMADM_PAYS.[shp,shx,dbf,prj] shapefile relative to the taxon level `family`.
 7. Read the output in the file `output.csv`
 
 Note: If you want to do additional analysis, you can run `spatialite /tmp/loaded.sqlite` after running the analysis. This database contains the following interesting tables:
