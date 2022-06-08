@@ -90,62 +90,65 @@ select o.Taxon_Kingdom as taxon_kingdom,o.Taxon_Phylum as taxon_phylum,
  where taxon <> ''; -- don't take into account observations w/o taxon
 
 
--- Species-Group count table: Allows different reference counts for different taxa
-select '-- Calculate Species-Group count table';
-create table species_group_count (name text, count integer);
+-- Calculate AAI = Art/Artklassenintensität
+select '-- Calculate AAI';
 
+create table species_group_count (name text, count integer);
 insert into species_group_count
 select taxon_{{SPECIES_GROUP}}, count(*)
   from obs_norm
  group by taxon_{{SPECIES_GROUP}};
+--create index ix_species_group_count on species_group_count (name);
 
--- Calculate AAI = Art/Artklassenintensität
-select '-- Calculate AAI';
-create table aai (intensity real, taxon text, sample_count integer);
-
-insert into aai
-select (cast(count(cellid) as real) / sgc.count)*100 as aai,
-       taxon,
-       count(*) as sample_count
+create table aai_results (count_species integer, count_group integer, taxon text);
+insert into aai_results
+select count(*) as count_species, sgc.count as count_group, taxon
   from obs_norm
        inner join species_group_count as sgc
-                    on obs_norm.taxon_{{SPECIES_GROUP}} = sgc.name
- group by taxon
- order by aai;
+           on obs_norm.taxon_{{SPECIES_GROUP}} = sgc.name
+ group by taxon;
 
 -- Calculate AGI = Art/Gebiet-Intensität
 select '-- Calculate AGI';
-create table agi (intensity real, taxon text);
 
-insert into agi
-select (cast(count(cellid) as real) / sgc.count)*100 as agi,
-       taxon
+create table species_group_cell_count (grp text, count integer);
+insert into species_group_cell_count
+select taxon_{{SPECIES_GROUP}}, count(distinct cellid)
+  from obs_norm
+ group by taxon_{{SPECIES_GROUP}};
+--create index ix_species_group_cell_count on species_group_cell_count (grp);
+
+create table agi_results (count_species integer, count_group integer, taxon text);
+insert into agi_results
+select obs.cell_count as count_species, sgcc.count as count_group, taxon
   from (
-    select count(cellid), cellid, taxon_kingdom, taxon_phylum, taxon_class, taxon_order, taxon_family, taxon
+    select count(distinct cellid) as cell_count, taxon, taxon_{{SPECIES_GROUP}}
       from obs_norm
-     group by taxon, cellid
+     group by taxon
   ) as obs
-       inner join species_group_count as sgc
-           on obs.taxon_{{SPECIES_GROUP}} = sgc.name
- group by taxon
- order by agi;
+       inner join species_group_cell_count as sgcc
+           on obs.taxon_{{SPECIES_GROUP}} = sgcc.grp;
 
 -- Calculate AMI = Art/Melder-Intensität
 select '-- Calculate AMI';
-create table ami (intensity real, taxon text);
 
-insert into ami
-select (cast(count(determiner) as real) / sgc.count)*100 as ami,
-       taxon
+create table species_group_determiner_count (grp text, count integer);
+insert into species_group_determiner_count
+select taxon_{{SPECIES_GROUP}}, count(distinct determiner)
+  from obs_norm
+ group by taxon_{{SPECIES_GROUP}};
+--create index ix_species_group_determiner_count on species_group_determiner_count (determiner, grp);
+
+create table ami_results (count_species integer, count_group integer, taxon text);
+insert into ami_results
+select obs.determiner_count as count_species, sgdc.count as count_group, taxon
   from (
-    select count(determiner), determiner, taxon_kingdom, taxon_phylum, taxon_class, taxon_order, taxon_family, taxon
+    select count(distinct determiner) as determiner_count, taxon, taxon_{{SPECIES_GROUP}}
       from obs_norm
-     group by taxon, determiner
+     group by taxon
   ) as obs
-       inner join species_group_count as sgc
-           on obs.taxon_{{SPECIES_GROUP}} = sgc.name
- group by taxon
- order by ami;
+       inner join species_group_determiner_count as sgdc
+           on obs.taxon_{{SPECIES_GROUP}} = sgdc.grp;
 
 -- Create interpretation table
 select '-- Create interpretation table';
@@ -163,24 +166,42 @@ values (0.0, 0.5, 'extremely rare'),
 select '-- Calculate mai';
 create table mai (taxon text, aai real, agi real, ami real, mai real, sample_count integer);
 
-insert into mai
-select aai.taxon as taxon,
-       aai.intensity as aai, agi.intensity as agi, ami.intensity as ami,
-       aai.intensity + agi.intensity + ami.intensity as mai,
-       aai.sample_count
-  from aai
-       inner join agi on aai.taxon = agi.taxon
-       inner join ami on aai.taxon = ami.taxon
- order by mai;
+-- insert into mai
+-- select aai.taxon as taxon,
+--        aai.intensity as aai, agi.intensity as agi, ami.intensity as ami,
+--        aai.intensity + agi.intensity + ami.intensity as mai,
+--        aai.sample_count
+--   from aai
+--        inner join agi on aai.taxon = agi.taxon
+--        inner join ami on aai.taxon = ami.taxon
+--  order by mai;
+
+create table results_species (taxon,
+                              aai, aai_species, aai_group,
+                              agi, agi_species, agi_group,
+                              ami, ami_species, ami_group,
+                              mai);
+
+insert into results_species
+  select
+    aair.taxon,
+    (cast(aair.count_species as real) / aair.count_group)*100 as aai, aair.count_species as aai_species, aair.count_group as aai_group,
+    (cast(agir.count_species as real) / agir.count_group)*100 as agi, agir.count_species as agi_species, agir.count_group as agi_group,
+    (cast(amir.count_species as real) / amir.count_group)*100 as ami, amir.count_species as ami_species, amir.count_group as ami_group,
+    (cast(aair.count_species as real) / aair.count_group + cast(agir.count_species as real) / agir.count_group + cast(amir.count_species as real) / amir.count_group) * 100 as mai
+  from aai_results as aair
+inner join agi_results as agir on aair.taxon = agir.taxon
+inner join ami_results as amir on aair.taxon = amir.taxon;
 
 select '-- Output';
 .header on
 .mode csv
 .output {{OUTPUT_FILE}}
   -- select * from mai;
-  select mai.taxon, mai.aai, mai.agi, mai.ami, mai.mai, mi.interpretation, mai.sample_count
-  from mai
+  select *
+  from results_species rs
   inner join mai_interpretation as mi
-  on mai.mai >= mi.mai_low
-  and mai.mai < mi.mai_high;
+  on rs.mai >= mi.mai_low
+  and rs.mai < mi.mai_high
+  order by mai;
 .quit
