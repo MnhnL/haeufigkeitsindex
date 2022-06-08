@@ -18,4 +18,4 @@ select '-- Import csv';
 .quit
 EOF
 
-sed haeufindex.sql -e "s/{{OUTPUT_FILE}}/$2/" -e "s/{{CELL_SIZE}}/$3/" -e "s/{{ROI}}/$4/" -e "s/{{SPECIES_GROUP}}/$5/" | spatialite -batch $DB
+sed haeufindex.sql -e "s|{{OUTPUT_FILE}}|$2|" -e "s|{{CELL_SIZE}}|$3|" -e "s|{{ROI}}|$4|" -e "s|{{SPECIES_GROUP}}|$5|" | spatialite -batch $DB
